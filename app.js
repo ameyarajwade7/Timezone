@@ -24,6 +24,7 @@ let refreshTimer = null;
 let searchDebounceTimer = null;
 let searchRequestId = 0;
 let compareUtcMs = null;
+const zonedPartsFormatters = new Map();
 
 if (!selectedPlaces.length) {
   DEFAULT_ZONES.forEach((zone) => {
@@ -526,16 +527,22 @@ function applySliderTime(zone, minutesOfDay) {
 }
 
 function getZonedParts(date, zone) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: zone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).formatToParts(date);
+  let formatter = zonedPartsFormatters.get(zone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    });
+    zonedPartsFormatters.set(zone, formatter);
+  }
+
+  const parts = formatter.formatToParts(date);
 
   return {
     year: Number(parts.find((part) => part.type === "year")?.value || 0),
@@ -608,11 +615,12 @@ function drawBackgroundOverlap() {
   }
 
   const centerY = height * 0.56;
-  const bandMaxAmplitude = Math.max(30, Math.min(92, height * 0.16));
+  const bandMaxAmplitude = Math.max(44, Math.min(118, height * 0.2));
+  const animationPhase = (Date.now() % 160000) / 160000;
 
   places.forEach((place, idx) => {
     const rgb = getPlaceColorRgb(place.id);
-    drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, place.zone, rgb, idx, places.length);
+    drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, place.zone, rgb, idx, places.length, animationPhase);
   });
 }
 
@@ -632,32 +640,39 @@ function drawBackgroundGrid(ctx, width, height) {
   ctx.restore();
 }
 
-function drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, zone, rgb, index, total) {
+function drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, zone, rgb, index, total, animationPhase) {
   const [r, g, b] = rgb.split(" ").map((v) => Number(v));
-  const amplitude = bandMaxAmplitude * (0.55 + ((index % 5) * 0.07));
-  const baseThickness = 7 + (index % 3);
-  const laneOffset = (index - (total - 1) / 2) * 3;
+  const amplitude = bandMaxAmplitude * (0.62 + ((index % 5) * 0.07));
+  const baseThickness = 11 + (index % 4) * 1.5;
+  const laneOffset = (index - (total - 1) / 2) * 1.5;
   const baseDate = getActiveDate();
   const points = [];
+  const drift = animationPhase * Math.PI * 2;
 
   for (let hour = 0; hour <= 24; hour += 0.5) {
     const x = (width * hour) / 24;
     const utcSample = baseDate.getTime() + (hour - 12) * 3600000;
     const local = getZonedParts(new Date(utcSample), zone);
     const intensity = local.hour >= 8 && local.hour < 20 ? 1 : 0.3;
-    const phase = (index * Math.PI) / 7;
-    const wave = Math.sin((hour / 24) * Math.PI * 2 + phase) * amplitude * (0.35 + intensity * 0.65);
+    const phase = (index * Math.PI) / 7 + drift;
+    const primary = Math.sin((hour / 24) * Math.PI * 2 + phase);
+    const secondary = Math.sin((hour / 24) * Math.PI * 4 + phase * 0.7 + drift * 0.6) * 0.5;
+    const tertiary = Math.sin((hour / 24) * Math.PI * 8 + phase * 1.4 + drift * 1.2) * 0.18;
+    const wave = (primary + secondary + tertiary) * amplitude * (0.34 + intensity * 0.66);
     const topY = centerY + laneOffset - baseThickness - wave;
     const bottomY = centerY + laneOffset + baseThickness + wave;
     points.push({ x, topY, bottomY, intensity });
   }
 
   const grad = ctx.createLinearGradient(0, centerY - bandMaxAmplitude, 0, centerY + bandMaxAmplitude);
-  grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.08)`);
-  grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.28)`);
-  grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.08)`);
+  grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.12)`);
+  grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.36)`);
+  grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.12)`);
 
   ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = `rgba(${r}, ${g}, ${b}, 0.16)`;
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].bottomY);
   points.forEach((point) => ctx.lineTo(point.x, point.topY));
@@ -668,6 +683,13 @@ function drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, zone, rgb,
   ctx.fillStyle = grad;
   ctx.fill();
 
+  const glowGrad = ctx.createLinearGradient(0, centerY - bandMaxAmplitude * 1.1, 0, centerY + bandMaxAmplitude * 1.1);
+  glowGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.04)`);
+  glowGrad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.18)`);
+  glowGrad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.04)`);
+  ctx.fillStyle = glowGrad;
+  ctx.fill();
+
   ctx.beginPath();
   points.forEach((point, idx) => {
     if (idx === 0) {
@@ -676,7 +698,7 @@ function drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, zone, rgb,
     }
     ctx.lineTo(point.x, point.topY);
   });
-  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.75)`;
+  ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.78)`;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
