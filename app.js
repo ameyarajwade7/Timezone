@@ -11,10 +11,11 @@ const bgOverlapGraph = document.getElementById("bgOverlapGraph");
 const resetTimeButton = document.getElementById("resetTimeButton");
 const graphHint = document.getElementById("graphHint");
 
-const DEFAULT_ZONES = [
-  "America/New_York",
-  "Europe/London",
-  "Asia/Tokyo"
+const DEFAULT_PLACES = [
+  { name: "New York", zone: "America/New_York" },
+  { name: "London", zone: "Europe/London" },
+  { name: "Tokyo", zone: "Asia/Tokyo" },
+  { name: "Mumbai", zone: "Asia/Kolkata" }
 ];
 
 const allZones = getAllTimeZones();
@@ -27,11 +28,17 @@ let compareUtcMs = null;
 const zonedPartsFormatters = new Map();
 
 if (!selectedPlaces.length) {
-  DEFAULT_ZONES.forEach((zone) => {
+  DEFAULT_PLACES.forEach((place) => {
+    const normalizedZone = normalizeTimeZone(place.zone);
+    if (!normalizedZone) {
+      return;
+    }
+
+    const safeName = place.name || getCityName(normalizedZone);
     selectedPlaces.push({
-      id: createPlaceId(getCityName(zone), zone),
-      name: getCityName(zone),
-      zone
+      id: createPlaceId(safeName, normalizedZone),
+      name: safeName,
+      zone: normalizedZone
     });
   });
 }
