@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Overlap Timezones</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="bgOverlapGraph" class="bg-overlap-graph" aria-hidden="true"></canvas>
+  <div class="bg-glow glow-1" aria-hidden="true"></div>
+  <div class="bg-glow glow-2" aria-hidden="true"></div>
+
+  <main class="app-shell">
+    <header class="hero">
+      <p class="eyebrow">GLOBAL CLOCKS</p>
+      <h1>Track Time Across the Globe</h1>
+      <p class="subtitle">Search a city, add it, and see a live date and time snapshot.</p>
+    </header>
+
+    <section class="controls" aria-label="Add a place">
+      <label class="search-label" for="citySearch">Search city or place</label>
+      <div class="search-row">
+        <div class="input-wrap">
+          <input id="citySearch" type="text" placeholder="Try Tokyo, London, Dubai..." autocomplete="off" />
+          <ul id="suggestions" class="suggestions" role="listbox" aria-label="City suggestions"></ul>
+        </div>
+        <button id="addButton" class="add-btn" type="button">Add</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="cards-head">
+        <div class="cards-title-wrap">
+          <h2>Your Places</h2>
+          <span id="countBadge" class="count-badge">0</span>
+        </div>
+        <div class="cards-actions">
+          <p id="graphHint" class="graph-hint">Live mode</p>
+          <button id="resetTimeButton" class="reset-btn" type="button">Reset Live</button>
+        </div>
+      </div>
+      <div id="cards" class="cards" aria-live="polite"></div>
+      <p id="emptyState" class="empty-state">No places yet. Add your first city above.</p>
+    </section>
+  </main>
+
+  <template id="cardTemplate">
+    <article class="time-card">
+      <div class="card-top">
+        <div>
+          <h3 class="city"></h3>
+          <p class="zone"></p>
+        </div>
+        <button class="remove-btn" type="button" aria-label="Remove place">✕</button>
+      </div>
+      <p class="time"></p>
+      <div class="scrub-wrap">
+        <div class="scrub-head">
+          <span>Time Bar</span>
+          <span class="scrub-readout"></span>
+        </div>
+        <input class="time-scrubber" type="range" min="0" max="1439" step="5" value="0" aria-label="Adjust time for comparison" />
+      </div>
+      <div class="card-foot">
+        <p class="date"></p>
+        <p class="offset"></p>
+      </div>
+    </article>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
