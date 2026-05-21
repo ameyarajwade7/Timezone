@@ -607,7 +607,6 @@ function drawBackgroundOverlap() {
 
   const places = selectedPlaces.slice();
   drawBackgroundGrid(ctx, width, height);
-  drawCurrentCursor(ctx, width, height);
   syncGraphHint();
 
   if (!places.length) {
@@ -702,23 +701,6 @@ function drawPlaceCoverageBand(ctx, width, centerY, bandMaxAmplitude, zone, rgb,
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  ctx.restore();
-}
-
-function drawCurrentCursor(ctx, width, height) {
-  if (compareUtcMs === null) {
-    return;
-  }
-
-  const x = width / 2;
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(x, 0);
-  ctx.lineTo(x, height);
-  ctx.strokeStyle = "rgba(255, 206, 94, 0.65)";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 8]);
-  ctx.stroke();
   ctx.restore();
 }
 
