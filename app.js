@@ -399,7 +399,9 @@ async function findMatches(query, limit, options = { includeRemote: false }) {
     })
     .sort((a, b) => a.score - b.score || a.label.localeCompare(b.label));
 
-  let ranked = [...localRanked];
+  const fuzzyLocalRanked = localRanked.length ? [] : getFuzzyLocalMatches(token, Math.max(limit * 2, 10));
+
+  let ranked = [...localRanked, ...fuzzyLocalRanked];
 
   if (options.includeRemote) {
     const remote = await fetchCityTimeZones(query, limit);
@@ -426,12 +428,91 @@ async function findMatches(query, limit, options = { includeRemote: false }) {
   return unique.slice(0, limit);
 }
 
+function getFuzzyLocalMatches(token, limit) {
+  const maxDistance = token.length <= 5 ? 1 : 2;
+
+  return searchIndex
+    .map((entry) => {
+      const cityToken = normalizeText(entry.displayName || "");
+      if (!cityToken) {
+        return null;
+      }
+
+      const distance = levenshteinDistance(token, cityToken);
+      if (distance > maxDistance) {
+        return null;
+      }
+
+      return {
+        ...entry,
+        score: entry.priority + 1 + distance / 10,
+        _distance: distance
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a._distance - b._distance || a.label.localeCompare(b.label))
+    .slice(0, limit)
+    .map((entry) => {
+      const clone = { ...entry };
+      delete clone._distance;
+      return clone;
+    });
+}
+
+function levenshteinDistance(a, b) {
+  if (a === b) {
+    return 0;
+  }
+
+  if (!a.length) {
+    return b.length;
+  }
+
+  if (!b.length) {
+    return a.length;
+  }
+
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+
+  for (let j = 0; j <= b.length; j += 1) {
+    prev[j] = j;
+  }
+
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        curr[j - 1] + 1,
+        prev[j] + 1,
+        prev[j - 1] + cost
+      );
+    }
+
+    for (let j = 0; j <= b.length; j += 1) {
+      prev[j] = curr[j];
+    }
+  }
+
+  return prev[b.length];
+}
+
 async function fetchCityTimeZones(query, limit) {
   if (query.length < 2) {
     return [];
   }
 
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=${Math.max(limit, 6)}&language=en&format=json`;
+  const primary = await fetchCityTimeZonesFromOpenMeteo(query, limit);
+  if (primary.length) {
+    return primary;
+  }
+
+  return fetchCityTimeZonesFromNominatim(query, limit);
+}
+
+async function fetchCityTimeZonesFromOpenMeteo(query, limit) {
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=${Math.max(limit, 8)}&language=en&format=json`;
 
   try {
     const response = await fetch(url);
@@ -463,6 +544,81 @@ async function fetchCityTimeZones(query, limit) {
       .filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+async function fetchCityTimeZonesFromNominatim(query, limit) {
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=${Math.max(3, Math.min(6, limit))}&addressdetails=1`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "Accept-Language": "en"
+      }
+    });
+    if (!response.ok) {
+      return [];
+    }
+
+    const places = await response.json();
+    if (!Array.isArray(places) || !places.length) {
+      return [];
+    }
+
+    const resolved = await Promise.all(
+      places.map(async (place) => {
+        const lat = Number(place.lat);
+        const lon = Number(place.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          return null;
+        }
+
+        const zone = await resolveTimezoneFromCoordinates(lat, lon);
+        const normalizedZone = normalizeTimeZone(zone);
+        if (!normalizedZone) {
+          return null;
+        }
+
+        const displayName = place.name || place.display_name?.split(",")[0] || "City";
+        const country = place.address?.country || "";
+
+        return {
+          zone: normalizedZone,
+          label: `${displayName}${country ? `, ${country}` : ""} (${normalizedZone})`,
+          displayName,
+          token: normalizeText(`${displayName} ${country} ${normalizedZone}`),
+          priority: 0
+        };
+      })
+    );
+
+    return resolved.filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function resolveTimezoneFromCoordinates(latitude, longitude) {
+  const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    if (typeof data.timezone === "string") {
+      return data.timezone;
+    }
+
+    if (data.timezone && typeof data.timezone.ianaTimeZoneId === "string") {
+      return data.timezone.ianaTimeZoneId;
+    }
+
+    return null;
+  } catch {
+    return null;
   }
 }
 
